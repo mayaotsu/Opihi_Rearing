@@ -6,9 +6,9 @@ output:
   html_document: default
   pdf_document: default
 editor_options:
-  chunk_output_type: console
   
   #Hi gabi
+  chunk_output_type: console
 ---
 -Looking at Survival in the first 5-6 hpf.
 
@@ -23,6 +23,8 @@ editor_options:
 -Note: Temp 31C, all vials had 0 survivors leading to quasi complete separation? (idk I googled it)
 ```{r}
 library(googlesheets4)
+
+#im hungry
 survival <- read_sheet('https://docs.google.com/spreadsheets/d/10z96KBKw9umDFoErzKku8eiQMh4RgWS2MIzMLrLX6CY/edit#gid=361953853', "6hpf Survival Summary")
 library(ggeffects)
 library(ggplot2)
