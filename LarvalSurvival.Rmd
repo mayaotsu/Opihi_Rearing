@@ -14,6 +14,9 @@ survival <- read_sheet('https://docs.google.com/spreadsheets/d/10z96KBKw9umDFoEr
 library(ggeffects)
 library(ggplot2)
 library(dplyr)
+
+
+library(lubridate)
 ggplot(survival) + 
   geom_point(aes(x = Days_in_TB, y = Proportion, color = as.factor(Treatment), shape = as.factor(Exp))) +scale_x_continuous(breaks = seq(1,12,1)) # each point is it's own female/rep
 
