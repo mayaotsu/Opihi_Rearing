@@ -1,0 +1,246 @@
+---
+title: "EarlyLarvalSurvival"
+author: "Gabi Mukai"
+date: "2024-03-21"
+output:
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: console
+---
+-Looking at Survival in the first 5-6 hpf.
+
+-Embryos were put into temperature treatments and checked 6 hours later. End of experiment. 
+
+-I had three trials and 5 temperature treatments. Although, 17.5 and 31C were only in one trial. 
+
+-Each temp had 3 replicate vials (for each trial). EX: Temperature 25C had a total of 9 vials but 17.5 only had 3 vials. 
+
+-Each trial was with one female. 
+
+-Note: Temp 31C, all vials had 0 survivors leading to quasi complete separation? (idk I googled it)
+```{r}
+library(googlesheets4)
+survival <- read_sheet('https://docs.google.com/spreadsheets/d/10z96KBKw9umDFoErzKku8eiQMh4RgWS2MIzMLrLX6CY/edit#gid=361953853', "6hpf Survival Summary")
+library(ggeffects)
+library(ggplot2)
+library(dplyr)
+library(emmeans)
+library(patchwork)
+ggplot(survival) + 
+  geom_point(aes(x = Treatment, y = Proportion, color = as.factor(Rep), shape = as.factor(Exp))) +scale_x_continuous(breaks = c(1,6,9,10,11)) 
+
+
+survival$Female <- as.factor(survival$Female)
+survival$Rep <- as.factor(survival$Rep)
+survival$Exp <- as.factor(survival$Exp)
+survival$Treatment <- as.factor(survival$Treatment)
+survival$Temperature <- 32.5
+survival$Temperature[which(survival$Treatment == 9)] = 29.5
+survival$Temperature[which(survival$Treatment == 6)] = 25
+survival$Temperature[which(survival$Treatment == 10)] = 31
+survival$Temperature[which(survival$Treatment == 1)] = 17.5
+survival$Temperature <-as.factor(survival$Temperature)
+survival$Exp <- factor(survival$Exp, levels = c("Dec.18", "Jan.6", "Feb.10"))
+data_plot = ggplot(survival) + 
+  geom_point(aes(x = (Temperature), y = Proportion, color = Exp), position = position_jitter(width = 0.1), alpha = 0.5)   + 
+  xlab(label = "Temperature (°C)")+
+  ylab("Proportion of Survivors") + theme_classic() + scale_color_manual(values = c("#0072B2", "#D95F02", "#999999"), name= "Trial Date") + theme(text = element_text(size = 20)) 
+
+OG = survival %>% group_by(Temperature) %>% summarise(Total_Original = sum(Original_Starting))
+aggregated = survival %>% group_by(Temperature) %>% summarise(Number_Total = sum(Number)) 
+merge(OG, aggregated, by = "Temperature") %>% 
+  ggplot() + 
+   geom_point(aes(x = as.factor(Temperature), y = Number_Total/Total_Original)) + theme_classic() + ylab("Probability of Survived") + xlab("Temperature (°C)")
+raw = merge(OG, aggregated, by = "Temperature")
+raw$prop <- raw$Number_Total/raw$Total_Original
+```
+
+# Make the Model
+```{r}
+library(lme4)
+# glm like in my other survival analysis 
+# include female, and rep (rep nested in female) as random effects. No need to include exp/trial as a random effect since that would be the same as female. 
+# treat temp as factor
+survival$Temperature <-as.factor(survival$Temperature)
+
+#model 1: glmer with female and rep nested 
+mod = glmer( cbind(Number,Original_Starting-Number) ~ (1 | Female/Rep)  + Temperature, family = binomial(link="logit"), data = survival) 
+# Warning message:
+#In checkConv(attr(opt, "derivs"), opt$par, ctrl = control$checkConv,  :
+#   Hessian is numerically singular: parameters are not uniquely determined
+# plus estimate for temp 31 is crazy 
+# I think it's quasi complete separation based on googling/stackexchange
+
+library("brglm2")
+# model 2 and 3: making model that has bias reduced estimator but package that I'm using only has it for glm not glmer so model 2 is without the BR and model 3 is with. Because it's a glm, Female is a fixed effect. Following (https://stats.stackexchange.com/questions/569001/proportion-data-with-number-of-trials-known-and-separation-glm-or-beta-regre)
+modg = glm(cbind(Number,Original_Starting-Number) ~ Female + Temperature, family = binomial(link="logit"), data = survival)
+modb = glm( cbind(Number,Original_Starting-Number) ~ Female + Temperature, family = binomial(link="logit"), data = survival, method = "brglmFit") # coefficient for 31 is a lot lower now 
+
+
+library(glmmTMB)
+#mod_od = (glmmTMB( cbind(Number,Original_Starting-Number) ~ (1 | Female/Rep)  + Temperature, family = betabinomial, data = survival )) 
+# not doing this because it has bunch of warnings 
+# model 4: glmm with betabinomial since why not. 
+mod_od = (glmmTMB( cbind(Number,Original_Starting-Number) ~ (1 | Female)  + Temperature, family = betabinomial, data = survival ))
+
+# model 5: glmer with nesting but we get rid of Temp 31 in the dataframe. I think of this as the control. Want to make sure our final model doesn't really differ with this one in particular. Ideally, none of them should change (outside of us fixing complete separation in model 3)
+no31 <- survival %>% subset(Temperature != "31")
+mod_31 = (glmer( cbind(Number,Original_Starting-Number) ~ (1 | Female/Rep)  + Temperature, family = binomial(link="logit"), data = no31))
+
+# test of overdispersion
+#overdisp_fun <- function(model) {
+#rdf <- df.residual(model)
+#rp <- residuals(model,type="pearson")
+#Pearson.chisq <- sum(rp^2)
+#prat <- Pearson.chisq/rdf
+#pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
+#c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
+#}
+#overdisp_fun(mod)
+#overdisp_fun(modg)
+#overdisp_fun(modb)
+#DHARMa::testDispersion(DHARMa::simulateResiduals(fittedModel = modg)) # no overdispersion
+#DHARMa::testDispersion(DHARMa::simulateResiduals(fittedModel = modb)) # no overdispersion
+#overdisp_fun(mod_od)
+#overdisp_fun(mod_31)
+# none of them really have overdispersion, model 4 is prob. not needed but whatever. 
+
+
+# let's compare coeffiecient estimates from 1) glmer that gives a warning (mod); 2) glm; 3) glm with biased reduced estimator 4) glmmtmb; 5) glmer without 31
+summary(mod) 
+# intercept: 2.2
+# 25: 0.008 (2.2)
+# 29.5: -1.1 (1.1)
+# 31: -23.02 (-21)
+# 32.5: -4.5 (-2.3)
+summary(modg)
+# intercept: 3.3
+# 25: -0.18 (3.12)
+# 29.5: -1.3 (2)
+# 31: -21.4 (-18.1)
+# 32.5: -4.8 (-1.5)
+summary(modb)
+# intercept: 3.08
+# 25: -0.09 (2.99)
+# 29.5: -1.13 (1.95)
+# 31: -5.12 (-2.04)
+# 32.5: -4.45 (-1.37)
+summary(mod_od)
+# intercept: 2.08
+# 25: 0.1 (2.09)
+# 29.5: -1.01 (2.07)
+# 31: -24.12 (-22)
+# 32.5: -4.36 (-2.28)
+summary(mod_31)
+# intercept: 2.22
+# 25: 0.008 (2.228)
+# 29.5: -1.12 (1.1)
+# 32.5: -4.57 (-2.35)
+
+# besides treatment 31, the estimates are somewhat near each other for all the models. Give and take a bit. Tells me that we'll get a similar story regardless but maybe we can improve treatment 31
+```
+
+# Model Diagnostics
+```{r}
+#hist(resid(mod_od)) 
+#car::qqPlot(resid(mod_od))
+#plot(resid(mod_od)) # this looks even across
+#plot(fitted(mod_od), resid(mod_od))
+#plot(DHARMa::simulateResiduals(mod_od), quantreg = T) # I think QQ looks pretty good but not sure about residuals vs predictions
+
+#hist(resid(mod))
+#plot(fitted(mod), resid(mod))
+
+#hist(resid(modg))
+#plot(fitted(modg), resid(modg))
+#hist(resid(modb))
+#plot(fitted(modb), resid(modb))
+#DHARMa::testDispersion(DHARMa::simulateResiduals(fittedModel = mod_31))
+#hist(resid(mod_31))
+#plot(fitted(mod_31), resid(mod_31))
+```
+# Create effects plots
+
+```{r}
+g <- ggpredict(mod, terms =c("Temperature")) 
+ggplot(g, aes(x, predicted)) + geom_point() +geom_errorbar(aes(ymin=conf.low,ymax=conf.high,width=0.2)) +ggtitle("glmer with warning mod")
+
+g <- ggpredict(modg, terms =c("Temperature")) 
+ggplot(g, aes(x, predicted)) + geom_point() +geom_errorbar(aes(ymin=conf.low,ymax=conf.high,width=0.2)) + ggtitle("glm")
+
+g <- ggpredict(modb, terms =c("Temperature")) 
+ggplot(g, aes(x, predicted)) + geom_point() +geom_errorbar(aes(ymin=conf.low,ymax=conf.high,width=0.2)) +ggtitle("glm with BR")
+
+g <- ggpredict(mod_od, terms =c("Temperature")) 
+ggplot(g, aes(x, predicted)) + geom_point() +geom_errorbar(aes(ymin=conf.low,ymax=conf.high,width=0.2)) +ggtitle("glmmtmb")
+
+g<-ggpredict(mod_31, terms =c("Temperature")) 
+ggplot(g, aes(x, predicted)) + geom_point() +geom_errorbar(aes(ymin=conf.low,ymax=conf.high,width=0.2)) + ggtitle("glmer no 31")
+
+# visually there's not many changes either besides 31
+
+emmeans(mod, pairwise ~ Temperature, adjust = "tukey") 
+# difference between 17.5 and 25/29.5/31 not sign.
+# difference between 17.5 and 32.5 is sign.
+# difference between 25 and 29.5 and 31 not sign.
+# difference between 25 and 32.5 sign.
+# difference between 29.5 and 31 not sign.
+# difference between 29.5 and 32.5 is sign. 
+# difference between 31 and 32.5 is not sign. 
+emmeans(modg, pairwise ~ Temperature, adjust = "tukey") 
+# difference between 17.5 and 25/29.5/31 not sign.
+# difference between 17.5 and 32.5 is sign.
+# difference between 25 and 29.5 and 31 not sign.
+# difference between 25 and 32.5 sign.
+# difference between 29.5 and 31 not sign.
+# difference between 29.5 and 32.5 is sign. 
+# difference between 31 and 32.5 is not sign. 
+emmeans(modb, pairwise ~ Temperature, adjust = "tukey") 
+# difference between 17.5 and 25/29.5 not sign.
+# difference between 17.5 and 31/32.5 is sign.
+# difference between 25 and 29.5  not sign.
+# difference between 25 and 31/32.5 sign.
+# difference between 29.5 and 31 not sign.
+# difference between 29.5 and 32.5 is sign. 
+# difference between 31 and 32.5 is not sign. 
+emmeans(mod_od, pairwise ~ Temperature, adjust = "tukey") 
+# difference between 17.5 and 25/29.5/31 not sign.
+# difference between 17.5 and 32.5 is sign.
+# difference between 25 and 29.5 and 31 not sign.
+# difference between 25 and 32.5 sign.
+# difference between 29.5 and 31 not sign.
+# difference between 29.5 and 32.5 is sign. 
+# difference between 31 and 32.5 is not sign. 
+emmeans(mod_31, pairwise ~ Temperature, adjust = "tukey")
+# difference between 17.5 and 25/29.5 not sign.
+# difference between 17.5 and 32.5 is sign.
+# difference between 25 and 29.5  not sign.
+# difference between 25 and 32.5 sign.
+# difference between 29.5 and 32.5 is sign. 
+
+# the only thing that changes is the X temperature in relation to temperature 31. In other words, how 17.5, 25, and 32.5 are different from each other remains the same. I think we can go with modb
+
+g <- ggpredict(modb, terms =c("Temperature")) 
+mod_plot = ggplot(g, aes(x, predicted)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=conf.low,ymax=conf.high,width=0.2))+ 
+  xlab(label = "Temperature (°C)")+
+  ylab("Probability of Survival")  + theme_classic() +
+  annotate("text", x = c(1,2,3,4,5), y = c(1.03, 1.02, 1, 0.8, 0.45), label = c("a", "a", "ab", "bc", "c"))
+
+ggplot(survival) + 
+  geom_errorbar(data = g, aes(x, predicted, ymin=conf.low,ymax=conf.high,width=0)) +
+  geom_point(aes(x = (Temperature), y = Proportion, color = Exp), position = position_jitter(width = 0.1), alpha = 0.5)   + 
+  xlab(label = "Temperature (°C)")+
+  ylab("Proportion of Survivors") + theme_classic() + scale_color_manual(values = c("#0072B2", "#D95F02", "#999999"), name= "Trial Date") + theme(text = element_text(size = 20)) +
+  annotate("text", x = c(1,2,3,4,5), y = c(1.03, 1.03, 1.03, 0.8, 0.45), label = c("a", "a", "ab", "bc", "c"))
+ggsave("~/Desktop/Opihi_Larvae/opihi_exp1.2.png")
+data_plot + mod_plot
+ggsave("~/Desktop/Opihi_Larvae/opihi_exp1.1.png")
+
+
+```
+
+
+```{r}

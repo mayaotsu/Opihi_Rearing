@@ -1,0 +1,92 @@
+---
+title: "LarvalDevelopment"
+author: "Gabi Mukai"
+date: "2024-01-31"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+When did larvae raised at 25C reach developmental milestones?
+```{r setup, include=FALSE}
+library(googlesheets4)
+library(ggplot2)
+library(dplyr)
+development <- read_sheet('https://docs.google.com/spreadsheets/d/10z96KBKw9umDFoErzKku8eiQMh4RgWS2MIzMLrLX6CY/edit#gid=361953853', "Normal Larval Development Summary")
+
+# alkaline vs non for each trial date
+development %>% subset(HPF == "24") %>% group_by(`Trial Date`, Alkaline_Treatment) %>% summarise(sum(Count))
+
+head(development)
+development$Stage <- as.factor(development$Stage) 
+development$Stage <- factor(development$Stage, levels = c("Early Trochophore", "Pre to Mid Torsion", "Post Torsion", "Eyespot Only", "Eyespot and CT", "Eyespot but CT not viewable"))
+development$HPF <- as.factor(unlist(development$HPF) )
+unique(development$HPF)
+#development$HPF <- factor(development$HPF, levels = c("6", "20-28.5", "44-50", "67-72"))
+class(development$Count)
+mycolors <- c("#E1F5FE", "#BBDEFB", "#29B6F6", "#1976D2", "#01579B", "grey")
+
+develop_summary = development %>% group_by(HPF, Stage) %>% summarise(Count_summary = sum(Count)) 
+Total_Count = develop_summary %>% ungroup() %>% group_by(HPF) %>% summarise(Total = sum(Count_summary))
+proportion = merge(develop_summary, Total_Count, by = "HPF") 
+proportion$proportion = proportion$Count_summary/proportion$Total
+ggplot(proportion) + 
+  geom_col(aes(x = HPF, y = proportion, fill = Stage)) +
+  scale_fill_manual(values=mycolors) +
+  theme_classic() + 
+  ylab('Proportion at Stage') + xlab("Hours Post Fertilization") + geom_text(aes(x=HPF, y = c(0.95, 0.3,0.95,0.76,0.31,0.95,0.95,0.87,0.18), label = paste0("frac(",Count_summary, ",", Total, 
+  ")")), vjust=-0.25, size = 10, parse = TRUE, color = c("black","black","black","black","white","black","black","black","white")) +
+  theme(axis.text=element_text(size=30),
+        axis.title=element_text(size=40),legend.text=element_text(size=40), legend.title = element_text(size = 40))
+ggsave("~/Downloads/Developmentbarchartstack.png", width = 5000, height = 7000, units = "px")
+
+ggplot(proportion) + 
+  geom_col(aes(x = HPF, y = proportion, fill = Stage), position = "dodge2") +
+  scale_fill_manual(values=mycolors) +
+  theme_classic() + 
+  ylab('Proportion at Stage') + xlab("Hours Post Fertilization") + geom_text(aes(x=HPF, y = proportion, label = paste0("frac(",Count_summary, ",", Total, 
+  ")")), vjust=-0.25, size = 10, parse = TRUE, color = c("black","black","black","black","black","black","black","black","black"),position = position_dodge2(width = 0.9)) +
+  theme(axis.text=element_text(size=30),
+        axis.title=element_text(size=40),legend.text=element_text(size=40), legend.title = element_text(size = 40))
+ggsave("~/Downloads/Developmentbarchartdodge.png", width = 5000, height = 7000, units = "px")
+development$Rep <- as.factor(development$Rep)
+development$Female_No. <- as.factor(development$Female_No.)
+development$Alkaline_Treatment <- as.factor(development$Alkaline_Treatment)
+
+mycolors <- c("#E1F5FE", "#BBDEFB", "#29B6F6", "#1976D2", "#01579B")
+
+develop_summary_sub = development %>% group_by(HPF, Stage) %>% summarise(Count_summary = sum(Count)) 
+develop_summary_sub = develop_summary_sub[-which(develop_summary_sub$Stage == "Eyespot but CT not viewable"),]
+Total_Count_sub = develop_summary_sub %>% ungroup() %>% group_by(HPF) %>% summarise(Total = sum(Count_summary))
+proportion_sub = merge(develop_summary_sub, Total_Count_sub, by = "HPF") 
+proportion_sub$proportion = proportion_sub$Count_summary/proportion_sub$Total
+
+ggplot(proportion_sub) + 
+  geom_col(aes(x = HPF, y = proportion, fill = Stage)) +
+  scale_fill_manual(values=mycolors) +
+  theme_classic() + 
+  ylab('Proportion at Stage') + xlab("Hours Post Fertilization") + geom_text(aes(x=HPF, y = c(0.95, 0.3,0.95,0.63,0.95,0.95,0.87), label = paste0("frac(",Count_summary, ",", Total, 
+  ")")), vjust=-0.25, size = 10, parse = TRUE, color = c("black","black","black","black","black","black","black")) +
+  theme(axis.text=element_text(size=30),
+        axis.title=element_text(size=40),legend.text=element_text(size=40), legend.title = element_text(size = 40))
+ggsave("~/Downloads/Developmentbarchartsubdodge.png", width = 5000, height = 7000, units = "px")
+
+
+develop_summary_Female = development %>% group_by(HPF, Stage,Female_No.,Rep, Alkaline_Treatment) %>% summarise(Count_summary = sum(Count)) 
+Total_Count_Female = develop_summary_Female %>% ungroup() %>% group_by(HPF, Female_No., Rep, Alkaline_Treatment) %>% summarise(Total = sum(Count_summary))
+develop_count_total = merge(develop_summary_Female, Total_Count_Female, by = c("HPF", "Female_No.", "Rep", "Alkaline_Treatment"))
+
+
+```
+# Basic Stats
+mean = n*p (number of trials * prob. of sucesses)
+variance = n*p*(1-p) (number of trials * prob of sucesses * prob of failures)
+```{r}
+# 24 hpf
+proportion %>% group_by(HPF) %>%  summarise(mean_np = (Total*proportion), variance = (Total*proportion*(1-proportion)), sd = sqrt((Total*proportion*(1-proportion))))
+
+
+``` 
+
+
+```{r}
