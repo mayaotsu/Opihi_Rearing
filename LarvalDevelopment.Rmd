@@ -7,6 +7,7 @@ editor_options:
   chunk_output_type: console
 ---
 
+### MAYA WAS HERE
 When did larvae raised at 25C reach developmental milestones?
 ```{r setup, include=FALSE}
 library(googlesheets4)
