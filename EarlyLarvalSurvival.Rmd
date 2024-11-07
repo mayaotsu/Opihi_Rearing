@@ -7,6 +7,8 @@ output:
   pdf_document: default
 editor_options:
   chunk_output_type: console
+  
+  #Hi gabi
 ---
 -Looking at Survival in the first 5-6 hpf.
 
